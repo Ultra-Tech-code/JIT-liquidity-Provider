@@ -3,6 +3,8 @@ pragma solidity ^0.8.20;
 
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
+import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
+import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -117,13 +119,29 @@ contract JITLiquidityProvider is IUniswapV3MintCallback, Ownable {
     ) internal returns (uint128 liquidity, uint256 amount0, uint256 amount1) {
         IUniswapV3Pool v3Pool = IUniswapV3Pool(pool);
         
-        // For simplicity, we'll use a fixed liquidity amount based on desired amounts
-        // In production, you'd calculate this more precisely
-        liquidity = uint128(_calculateLiquidity(amount0Desired, amount1Desired));
+        // Get current pool state
+        (uint160 sqrtPriceX96, , , , , , ) = v3Pool.slot0();
+        
+        // Convert ticks to sqrtPrice values using Uniswap's TickMath library
+        uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(tickLower);
+        uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(tickUpper);
+        
+        // Calculate optimal liquidity using Uniswap's LiquidityAmounts library
+        // This uses the PROPER Uniswap V3 formulas:
+        // - For token0: L = amount0 * (sqrtP_upper * sqrtP_lower) / (sqrtP_upper - sqrtP_lower)
+        // - For token1: L = amount1 / (sqrtP_upper - sqrtP_lower)
+        // - Takes the minimum of both to ensure we don't exceed available tokens
+        liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            sqrtRatioAX96,
+            sqrtRatioBX96,
+            amount0Desired,
+            amount1Desired
+        );
         
         require(liquidity > 0, "Liquidity must be > 0");
         
-        // Mint liquidity
+        // Mint liquidity - this will callback to uniswapV3MintCallback
         (amount0, amount1) = v3Pool.mint(
             address(this),
             tickLower,
@@ -147,13 +165,7 @@ contract JITLiquidityProvider is IUniswapV3MintCallback, Ownable {
         emit LiquidityAdded(pool, liquidity, tickLower, tickUpper, amount0, amount1);
     }
     
-    /**
-     * @notice Simple liquidity calculation helper
-     */
-    function _calculateLiquidity(uint256 amount0, uint256 amount1) internal pure returns (uint256) {
-        // Simplified calculation - in production use proper math
-        return (amount0 + amount1) / 2;
-    }
+    // ============ Position Management Functions ============
     
     /**
      * @notice Remove JIT liquidity from a pool

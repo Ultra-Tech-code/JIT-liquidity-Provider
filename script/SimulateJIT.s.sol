@@ -54,24 +54,21 @@ contract SimulateJIT is Script {
         console.log("Tick lower:", vm.toString(tickLower));
         console.log("Tick upper:", vm.toString(tickUpper));
         
-        // Check balances
-        uint256 wethBalance = IERC20(WETH).balanceOf(deployer);
-        uint256 usdcBalance = IERC20(USDC).balanceOf(deployer);
+        // Check balances in the CONTRACT (not deployer wallet)
+        uint256 wethBalance = IERC20(WETH).balanceOf(address(jitProvider));
+        uint256 usdcBalance = IERC20(USDC).balanceOf(address(jitProvider));
         
-        console.log("WETH balance:", wethBalance);
-        console.log("USDC balance:", usdcBalance);
+        console.log("Contract WETH balance:", wethBalance);
+        console.log("Contract USDC balance:", usdcBalance);
         
-        // Transfer tokens to JIT contract
+        // Use amounts based on what's in the contract
         uint256 wethAmount = 1 ether; // 1 WETH
-        uint256 usdcAmount = 3000 * 1e6; // 3000 USDC
+        uint256 usdcAmount = 3000 * 1e6; // 3000 USDC (6 decimals)
         
         if (wethBalance >= wethAmount && usdcBalance >= usdcAmount) {
-            IERC20(WETH).transfer(address(jitProvider), wethAmount);
-            IERC20(USDC).transfer(address(jitProvider), usdcAmount);
+            console.log("Contract has sufficient balance, adding liquidity...");
             
-            console.log("Transferred tokens to JIT contract");
-            
-            // Add JIT liquidity
+            // Add JIT liquidity (tokens are already in contract)
             jitProvider.addJITLiquidity(
                 WETH_USDC_POOL,
                 tickLower,
@@ -88,7 +85,8 @@ contract SimulateJIT is Script {
             console.log("Position token0:", position.token0Amount);
             console.log("Position token1:", position.token1Amount);
         } else {
-            console.log("Insufficient balance. Need to fund wallet first.");
+            console.log("Insufficient balance in contract.");
+            console.log("Required: 1 WETH and 3000 USDC");
         }
         
         vm.stopBroadcast();
